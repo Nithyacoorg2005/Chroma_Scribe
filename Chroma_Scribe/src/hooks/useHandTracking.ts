@@ -1,124 +1,74 @@
-import { useEffect, useRef, useState } from 'react';
-import { HandLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
+import { useState, useEffect } from 'react';
+import {
+    HandLandmarker,
+    FilesetResolver
+} from '@mediapipe/tasks-vision';
 
-export interface HandPosition {
-  x: number;
-  y: number;
-  z: number;
-  rotation: {
-    x: number;
-    y: number;
-    z: number;
-  };
-}
+let lastVideoTime = -1;
+let handLandmarker: HandLandmarker | null = null;
+let runningMode: "IMAGE" | "VIDEO" = "VIDEO";
 
-export function useHandTracking(videoElement: HTMLVideoElement | null, enabled: boolean) {
-  const [handPosition, setHandPosition] = useState<HandPosition | null>(null);
-  const handLandmarkerRef = useRef<HandLandmarker | null>(null);
-  const animationFrameRef = useRef<number>();
+// This hook now accepts the video element and the stream
+export const useHandTracking = (
+    videoRef: React.RefObject<HTMLVideoElement | null>,
+    stream: MediaStream | null,
+    cameraEnabled: boolean
+) => {
+    const [landmarks, setLandmarks] = useState(null);
+    const [isInitialized, setIsInitialized] = useState(false);
 
-  useEffect(() => {
-    let isMounted = true;
+    // Step 1: Create the hand landmarker
+    useEffect(() => {
+        const createHandLandmarker = async () => {
+            const vision = await FilesetResolver.forVisionTasks(
+                "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+            );
+            handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                baseOptions: {
+                    modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+                    delegate: "GPU"
+                },
+                runningMode: runningMode,
+                numHands: 2
+            });
+            console.log("Hand Landmarker created");
+            setIsInitialized(true);
+        };
+        createHandLandmarker();
+    }, []);
 
-    const initializeHandTracking = async () => {
-      try {
-        const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm'
-        );
-
-        const handLandmarker = await HandLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath:
-              'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-            delegate: 'GPU',
-          },
-          numHands: 1,
-          runningMode: 'VIDEO',
-          minHandDetectionConfidence: 0.5,
-          minHandPresenceConfidence: 0.5,
-          minTrackingConfidence: 0.5,
-        });
-
-        if (isMounted) {
-          handLandmarkerRef.current = handLandmarker;
+    // Step 2: Run predictions when the stream is active
+    useEffect(() => {
+        if (!stream || !videoRef.current || !handLandmarker || !cameraEnabled) {
+            setLandmarks(null);
+            return;
         }
-      } catch (error) {
-        console.error('Failed to initialize hand tracking:', error);
-      }
-    };
 
-    if (enabled) {
-      initializeHandTracking();
-    }
+        const video = videoRef.current;
+        let animationFrameId: number;
 
-    return () => {
-      isMounted = false;
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, [enabled]);
+        const predictWebcam = () => {
+            if (video.currentTime !== lastVideoTime && video.readyState >= 2) {
+                lastVideoTime = video.currentTime;
+                const results = handLandmarker!.detectForVideo(video, performance.now());
+                
+                if (results.landmarks && results.landmarks.length > 0) {
+                    setLandmarks(results.landmarks as any);
+                } else {
+                    setLandmarks(null);
+                }
+            }
+            animationFrameId = requestAnimationFrame(predictWebcam);
+        };
 
-  useEffect(() => {
-    if (!enabled || !videoElement || !handLandmarkerRef.current) {
-      setHandPosition(null);
-      return;
-    }
+        predictWebcam();
 
-    const detectHands = async () => {
-      if (!videoElement || !handLandmarkerRef.current || videoElement.readyState < 2) {
-        animationFrameRef.current = requestAnimationFrame(detectHands);
-        return;
-      }
+        return () => {
+            cancelAnimationFrame(animationFrameId);
+            setLandmarks(null);
+        };
 
-      try {
-        const result = handLandmarkerRef.current.detectForVideo(
-          videoElement,
-          performance.now()
-        );
+    }, [stream, videoRef, cameraEnabled, isInitialized]); // Re-run if any of these change
 
-        if (result.landmarks && result.landmarks.length > 0) {
-          const landmarks = result.landmarks[0];
-          const indexTip = landmarks[8];
-          const wrist = landmarks[0];
-          const middleTip = landmarks[12];
-
-          const dx = indexTip.x - wrist.x;
-          const dy = indexTip.y - wrist.y;
-          const dz = indexTip.z - wrist.z;
-
-          const rotationX = Math.atan2(dy, Math.sqrt(dx * dx + dz * dz));
-          const rotationY = Math.atan2(dx, dz);
-          const rotationZ = Math.atan2(middleTip.y - indexTip.y, middleTip.x - indexTip.x);
-
-          setHandPosition({
-            x: indexTip.x * 2 - 1,
-            y: -(indexTip.y * 2 - 1),
-            z: indexTip.z * 5,
-            rotation: {
-              x: rotationX,
-              y: rotationY,
-              z: rotationZ,
-            },
-          });
-        } else {
-          setHandPosition(null);
-        }
-      } catch (error) {
-        console.error('Hand detection error:', error);
-      }
-
-      animationFrameRef.current = requestAnimationFrame(detectHands);
-    };
-
-    detectHands();
-
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, [enabled, videoElement]);
-
-  return handPosition;
-}
+    return { landmarks, isInitialized };
+};

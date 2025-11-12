@@ -1,69 +1,74 @@
-import { useEffect, useRef } from 'react';
-import { X, Minus, Plus } from 'lucide-react';
+import React, { useEffect, useRef } from 'react';
 
-interface CameraPreviewProps {
-  stream: MediaStream | null;
-  onClose: () => void;
-  isMinimized: boolean;
-  onToggleMinimize: () => void;
-}
+// You will need to install react-icons for these
+// npm install react-icons
+import { VscChromeClose, VscChromeMinimize } from 'react-icons/vsc'; 
 
-export default function CameraPreview({
-  stream,
-  onClose,
-  isMinimized,
-  onToggleMinimize,
-}: CameraPreviewProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+type CameraPreviewProps = {
+    stream: MediaStream | null;
+    onClose: () => void;
+    isMinimized: boolean;
+    onToggleMinimize: () => void;
+};
 
-  useEffect(() => {
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
+const CameraPreview: React.FC<CameraPreviewProps> = ({
+    stream,
+    onClose,
+    isMinimized,
+    onToggleMinimize
+}) => {
+    const videoRef = useRef<HTMLVideoElement>(null);
+
+    // When the stream prop changes, attach it to the video element
+    useEffect(() => {
+        if (videoRef.current && stream) {
+            videoRef.current.srcObject = stream;
+        }
+    }, [stream]);
+
+    if (!stream) {
+        return null; // Don't render anything if the camera is off
     }
-  }, [stream]);
 
-  if (!stream) return null;
+    return (
+        <div
+            className={`absolute top-8 right-8 z-20 bg-vintage-bg border-2 border-vintage-accent shadow-lg transition-all duration-300 ${
+                isMinimized ? 'h-10 w-40' : 'h-48 w-64'
+            }`}
+        >
+            {/* --- Header Bar --- */}
+            <div className="flex justify-between items-center h-10 bg-vintage-accent px-2">
+                <span className="font-body text-sm text-vintage-bg font-bold">
+                    CAMERA PREVIEW
+                </span>
+                <div className="flex gap-2">
+                    <button
+                        onClick={onToggleMinimize}
+                        className="text-vintage-bg hover:text-white"
+                    >
+                        <VscChromeMinimize size={16} />
+                    </button>
+                    <button
+                        onClick={onClose}
+                        className="text-vintage-bg hover:text-white"
+                    >
+                        <VscChromeClose size={16} />
+                    </button>
+                </div>
+            </div>
 
-  return (
-    <div
-      className={`fixed top-8 right-8 transition-all duration-300 z-40 ${
-        isMinimized ? 'w-20 h-20' : 'w-56 h-56'
-      }`}
-    >
-      <div className="relative w-full h-full overflow-hidden border-2 border-accent-mustard bg-panel-dark" style={{boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)'}}>
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          className="w-full h-full object-cover scale-x-[-1]"
-        />
-
-        <div className="absolute bottom-0 right-0 flex gap-2 p-2 bg-gradient-to-t from-panel-dark to-transparent">
-          <button
-            onClick={onToggleMinimize}
-            className="w-8 h-8 bg-panel-dark border border-accent-mustard flex items-center justify-center hover:bg-accent-mustard transition-all text-primary hover:text-panel-dark"
-            aria-label={isMinimized ? 'Expand preview' : 'Minimize preview'}
-            title={isMinimized ? 'Expand' : 'Minimize'}
-          >
-            {isMinimized ? <Plus size={16} strokeWidth={2} /> : <Minus size={16} strokeWidth={2} />}
-          </button>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 bg-panel-dark border border-accent-mustard flex items-center justify-center hover:bg-accent-mustard transition-all text-primary hover:text-panel-dark"
-            aria-label="Close preview"
-            title="Close"
-          >
-            <X size={16} strokeWidth={2} />
-          </button>
+            {/* --- Video Feed --- */}
+            <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className={`w-full h-[calc(100%-2.5rem)] object-cover transform -scale-x-100 ${
+                    isMinimized ? 'hidden' : 'block'
+                }`}
+            />
         </div>
+    );
+};
 
-        {!isMinimized && (
-          <div className="absolute top-0 left-0 right-0 text-center pt-2 pointer-events-none">
-            <p className="text-primary text-xs font-body-bold opacity-70">GESTURE</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+export default CameraPreview;

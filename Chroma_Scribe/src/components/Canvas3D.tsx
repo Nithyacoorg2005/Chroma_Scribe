@@ -1,244 +1,161 @@
-import { useEffect, useRef } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { Sphere, Trail } from '@react-three/drei';
 import * as THREE from 'three';
-import { HandPosition } from '../hooks/useHandTracking';
-import { AudioData } from '../hooks/useAudioAnalysis';
 
-interface Canvas3DProps {
-  handPosition: HandPosition | null;
-  audioData: AudioData;
-  brushStyle: 'ink' | 'smoke' | 'string';
-  clearCanvas: boolean;
-  onClearComplete: () => void;
-  onSnapshot: () => void;
-  takeSnapshot: boolean;
-}
+// --- Type Definitions ---
 
-export default function Canvas3D({
-  handPosition,
-  audioData,
-  brushStyle,
-  clearCanvas,
-  onClearComplete,
-  onSnapshot,
-  takeSnapshot,
-}: Canvas3DProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const sceneRef = useRef<THREE.Scene | null>(null);
-  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const trailGroupRef = useRef<THREE.Group | null>(null);
-  const lastPositionRef = useRef<THREE.Vector3 | null>(null);
+type Canvas3DProps = {
+    handPosition: any;
+    audioData: { volume: number; pitch: number };
+    brushStyle: 'ink' | 'smoke' | 'string';
+    clearCanvas: boolean;
+    onClearComplete: () => void;
+    takeSnapshot: boolean;
+    onSnapshot: () => void;
+};
 
-  useEffect(() => {
-    if (!containerRef.current) return;
+type BrushProps = {
+    handPosition: any;
+    audioData: { volume: number; pitch: number };
+    brushRef: React.RefObject<THREE.Mesh>;
+};
 
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x28282d);
-    scene.fog = new THREE.Fog(0x28282d, 5, 15);
+type ArtTrailProps = {
+    audioData: { volume: number; pitch: number };
+    brushRef: React.RefObject<THREE.Object3D>;
+    brushStyle: 'ink' | 'smoke' | 'string';
+};
 
-    const camera = new THREE.PerspectiveCamera(
-      75,
-      window.innerWidth / window.innerHeight,
-      0.1,
-      1000
-    );
-    camera.position.z = 5;
+// --- 1. The Brush Component (The moving dot) ---
+function Brush({ handPosition, audioData, brushRef }: BrushProps) {
+    const brushColor = new THREE.Color().setHSL(audioData.volume / 100, 1.0, 0.5);
+    const brushScale = 0.1 + (audioData.volume / 50);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
-    containerRef.current.appendChild(renderer.domElement);
+    useFrame(() => {
+        if (handPosition && handPosition.length > 0 && handPosition[0][8]) {
+            const indexFingerTip = handPosition[0][8];
+            const x = (indexFingerTip.x - 0.5) * -15;
+            const y = (indexFingerTip.y - 0.5) * -10;
+            const z = -indexFingerTip.z * 5;
+            const newPoint = new THREE.Vector3(x, y, z);
 
-    const ambientLight = new THREE.AmbientLight(0xefefef, 0.5);
-    scene.add(ambientLight);
-
-    const directionalLight = new THREE.DirectionalLight(0xefefef, 0.8);
-    directionalLight.position.set(5, 5, 5);
-    scene.add(directionalLight);
-
-    const trailGroup = new THREE.Group();
-    scene.add(trailGroup);
-
-    sceneRef.current = scene;
-    cameraRef.current = camera;
-    rendererRef.current = renderer;
-    trailGroupRef.current = trailGroup;
-
-    const animate = () => {
-      requestAnimationFrame(animate);
-      renderer.render(scene, camera);
-    };
-    animate();
-
-    const handleResize = () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    };
-    window.addEventListener('resize', handleResize);
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      renderer.dispose();
-      containerRef.current?.removeChild(renderer.domElement);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (clearCanvas && trailGroupRef.current) {
-      trailGroupRef.current.children.forEach(child => {
-        if (child instanceof THREE.Mesh) {
-          child.geometry.dispose();
-          if (Array.isArray(child.material)) {
-            child.material.forEach(mat => mat.dispose());
-          } else {
-            child.material.dispose();
-          }
+            if (brushRef.current) {
+                brushRef.current.position.lerp(newPoint, 0.5);
+            }
         }
-      });
-      trailGroupRef.current.clear();
-      lastPositionRef.current = null;
-      onClearComplete();
-    }
-  }, [clearCanvas, onClearComplete]);
-
-  useEffect(() => {
-    if (takeSnapshot && rendererRef.current) {
-      const canvas = rendererRef.current.domElement;
-      canvas.toBlob(blob => {
-        if (blob) {
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = `chroma-scribe-${Date.now()}.png`;
-          link.click();
-          URL.revokeObjectURL(url);
-        }
-      });
-      onSnapshot();
-    }
-  }, [takeSnapshot, onSnapshot]);
-
-  useEffect(() => {
-    if (!handPosition || !sceneRef.current || !trailGroupRef.current) {
-      lastPositionRef.current = null;
-      return;
-    }
-
-    const currentPosition = new THREE.Vector3(
-      handPosition.x * 3,
-      handPosition.y * 3,
-      handPosition.z - 2
-    );
-
-    if (!lastPositionRef.current) {
-      lastPositionRef.current = currentPosition.clone();
-      return;
-    }
-
-    const distance = currentPosition.distanceTo(lastPositionRef.current);
-    if (distance < 0.05) return;
-
-    const color = getColorFromPitch(audioData.pitch);
-    const size = 0.05 + audioData.volume * 0.3;
-
-    if (brushStyle === 'ink') {
-      createInkRibbon(lastPositionRef.current, currentPosition, color, size, handPosition.rotation);
-    } else if (brushStyle === 'smoke') {
-      createSmokeTrail(currentPosition, color, size);
-    } else if (brushStyle === 'string') {
-      createString(lastPositionRef.current, currentPosition, color);
-    }
-
-    lastPositionRef.current = currentPosition.clone();
-  }, [handPosition, audioData, brushStyle]);
-
-  const getColorFromPitch = (pitch: number): THREE.Color => {
-    const colors = [
-      new THREE.Color(0xc7a250),
-      new THREE.Color(0x598280),
-      new THREE.Color(0xb86a4c),
-    ];
-
-    if (pitch < 0.33) {
-      return new THREE.Color().lerpColors(colors[0], colors[1], pitch * 3);
-    } else if (pitch < 0.67) {
-      return new THREE.Color().lerpColors(colors[1], colors[2], (pitch - 0.33) * 3);
-    } else {
-      return new THREE.Color().lerpColors(colors[2], colors[0], (pitch - 0.67) * 3);
-    }
-  };
-
-  const createInkRibbon = (
-    start: THREE.Vector3,
-    end: THREE.Vector3,
-    color: THREE.Color,
-    width: number,
-    rotation: { x: number; y: number; z: number }
-  ) => {
-    if (!trailGroupRef.current) return;
-
-    const direction = new THREE.Vector3().subVectors(end, start);
-    const length = direction.length();
-    direction.normalize();
-
-    const geometry = new THREE.PlaneGeometry(width, length);
-    const material = new THREE.MeshStandardMaterial({
-      color: color,
-      side: THREE.DoubleSide,
-      emissive: color,
-      emissiveIntensity: 0.2,
     });
 
-    const ribbon = new THREE.Mesh(geometry, material);
-    ribbon.position.copy(start).add(direction.multiplyScalar(length / 2));
-    ribbon.lookAt(end);
-    ribbon.rotateZ(rotation.z);
-
-    trailGroupRef.current.add(ribbon);
-  };
-
-  const createSmokeTrail = (position: THREE.Vector3, color: THREE.Color, size: number) => {
-    if (!trailGroupRef.current) return;
-
-    for (let i = 0; i < 3; i++) {
-      const geometry = new THREE.SphereGeometry(size * (0.5 + Math.random() * 0.5), 8, 8);
-      const material = new THREE.MeshStandardMaterial({
-        color: color,
-        transparent: true,
-        opacity: 0.6 - i * 0.15,
-        emissive: color,
-        emissiveIntensity: 0.4,
-      });
-
-      const particle = new THREE.Mesh(geometry, material);
-      particle.position.copy(position);
-      particle.position.x += (Math.random() - 0.5) * size;
-      particle.position.y += (Math.random() - 0.5) * size;
-      particle.position.z += (Math.random() - 0.5) * size;
-
-      trailGroupRef.current.add(particle);
-
-      setTimeout(() => {
-        if (trailGroupRef.current && particle.parent) {
-          trailGroupRef.current.remove(particle);
-          geometry.dispose();
-          material.dispose();
-        }
-      }, 2000 + i * 500);
-    }
-  };
-
-  const createString = (start: THREE.Vector3, end: THREE.Vector3, color: THREE.Color) => {
-    if (!trailGroupRef.current) return;
-
-    const points = [start, end];
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    const material = new THREE.LineBasicMaterial({ color: color, linewidth: 2 });
-
-    const line = new THREE.Line(geometry, material);
-    trailGroupRef.current.add(line);
-  };
-
-  return <div ref={containerRef} className="fixed inset-0" />;
+    return (
+        <Sphere ref={brushRef} args={[brushScale, 32, 32]}>
+            <meshStandardMaterial
+                color={brushColor}
+                emissive={brushColor}
+                emissiveIntensity={2}
+            />
+        </Sphere>
+    );
 }
+
+// --- 2. The Art Trail Component ---
+// This function definition should be clean.
+// It should ONLY return the <Trail> component.
+function ArtTrail({ audioData, brushRef, brushStyle }: ArtTrailProps) {
+    const brushColor = new THREE.Color().setHSL(audioData.volume / 100, 1.0, 0.5);
+    const baseScale = (0.1 + (audioData.volume / 50));
+
+    let trailConfig = {
+        width: baseScale,
+        length: 100,
+        attenuation: (t: number) => t * t // 'string' style
+    };
+
+    if (brushStyle === 'ink') {
+        trailConfig = {
+            width: baseScale * 2.0, // Thicker
+            length: 80,
+            attenuation: (t: number) => t * 0.5 // Fades slower
+        };
+    } else if (brushStyle === 'smoke') {
+        trailConfig = {
+            width: baseScale * 4.0, // Widest
+            length: 30, // Shorter trail
+            attenuation: (t: number) => t // Fades linearly (like smoke)
+        };
+    }
+
+    return (
+        <Trail
+            target={brushRef}
+            width={trailConfig.width}
+            length={trailConfig.length}
+            color={brushColor}
+            attenuation={trailConfig.attenuation}
+        />
+    );
+}
+
+// --- 3. The Main Scene Renderer ---
+// THIS is where the logic for clearing/changing the brush belongs.
+function SceneRenderer(props: Canvas3DProps) {
+    const { gl } = useThree();
+    const { takeSnapshot, onSnapshot, clearCanvas, onClearComplete } = props;
+    const brushRef = useRef<THREE.Mesh>(null!);
+    
+    const [trailKey, setTrailKey] = useState(0);
+
+    // Handle 'takeSnapshot'
+    useEffect(() => {
+        if (takeSnapshot) {
+            const link = document.createElement('a');
+            link.setAttribute('download', 'chroma-scribe.png');
+            link.setAttribute('href', gl.domElement.toDataURL('image/png').replace('image/png', 'image/octet-stream'));
+            link.click();
+            onSnapshot();
+        }
+    }, [takeSnapshot, gl, onSnapshot]);
+
+    // Handle 'clearCanvas'
+    useEffect(() => {
+        if (clearCanvas) {
+            setTrailKey(prevKey => prevKey + 1); // Change key to reset
+            onClearComplete();
+        }
+    }, [clearCanvas, onClearComplete]);
+
+    return (
+        <>
+            <Brush
+                brushRef={brushRef}
+                handPosition={props.handPosition}
+                audioData={props.audioData}
+            />
+
+            {/* THIS IS THE <ArtTrail> CALL.
+              It goes inside SceneRenderer.
+            */}
+            <ArtTrail
+                key={trailKey + props.brushStyle} // This key resets the component
+                brushRef={brushRef}
+                audioData={props.audioData}
+                brushStyle={props.brushStyle}
+            />
+        </>
+    );
+}
+
+// --- 4. The Main Canvas Component ---
+const Canvas3D: React.FC<Canvas3DProps> = (props) => {
+    return (
+        <div className="absolute top-0 left-0 w-full h-full z-0">
+            <Canvas camera={{ position: [0, 0, 8] }}>
+                <color attach="background" args={['#28282D']} />
+                <ambientLight intensity={0.5} />
+                <pointLight position={[10, 10, 10]} />
+                <SceneRenderer {...props} />
+            </Canvas>
+        </div>
+    );
+};
+
+export default Canvas3D;

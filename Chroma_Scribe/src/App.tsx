@@ -16,8 +16,7 @@ function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const audioData = useAudioAnalysis(micEnabled);
-  const handPosition = useHandTracking(videoRef.current, cameraEnabled);
-
+  const { landmarks: handPosition, isInitialized: isHandtrackingInitialized } = useHandTracking(videoRef, cameraStream, cameraEnabled);
   useEffect(() => {
     const initCamera = async () => {
       if (cameraEnabled) {
@@ -81,6 +80,7 @@ function App() {
 
   return (
     <div className="relative w-full h-screen overflow-hidden bg-canvas">
+    
       <video ref={videoRef} className="hidden" playsInline muted />
 
       <div className="fixed top-10 left-10 z-10 pointer-events-none">
@@ -104,23 +104,23 @@ function App() {
         takeSnapshot={takeSnapshot}
       />
 
-      <CameraPreview
-        stream={cameraStream}
-        onClose={handleClosePreview}
-        isMinimized={isPreviewMinimized}
-        onToggleMinimize={() => setIsPreviewMinimized(prev => !prev)}
-      />
+    <CameraPreview
+    stream={cameraStream}
+    onClose={handleClosePreview}
+    isMinimized={isPreviewMinimized}
+    onToggleMinimize={() => setIsPreviewMinimized(prev => !prev)}
+/>
 
-      <ControlPanel
-        micEnabled={micEnabled}
-        cameraEnabled={cameraEnabled}
-        brushStyle={brushStyle}
-        onToggleMic={handleToggleMic}
-        onToggleCamera={handleToggleCamera}
-        onClearCanvas={handleClearCanvas}
-        onSaveSnapshot={handleSaveSnapshot}
-        onChangeBrushStyle={handleChangeBrushStyle}
-      />
+<ControlPanel
+    micEnabled={micEnabled} // <-- CORRECT
+    cameraEnabled={cameraEnabled} // <-- CORRECT
+    brushStyle={brushStyle} // <-- CORRECT
+    onToggleMic={handleToggleMic} // <-- CORRECT
+    onToggleCamera={handleToggleCamera} // <-- CORRECT
+    onClearCanvas={handleClearCanvas} // <-- CORRECT
+    onSaveSnapshot={handleSaveSnapshot} // <-- CORRECT
+    onChangeBrushStyle={handleChangeBrushStyle} // <-- CORRECT
+/>
     </div>
   );
 }

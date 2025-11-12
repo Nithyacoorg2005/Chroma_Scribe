@@ -1,137 +1,98 @@
-import { useState } from 'react';
-import { Mic, MicOff, Video, VideoOff, Trash2, Camera, ChevronUp } from 'lucide-react';
+import React from 'react';
 
-interface ControlPanelProps {
-  micEnabled: boolean;
-  cameraEnabled: boolean;
-  brushStyle: 'ink' | 'smoke' | 'string';
-  onToggleMic: () => void;
-  onToggleCamera: () => void;
-  onClearCanvas: () => void;
-  onSaveSnapshot: () => void;
-  onChangeBrushStyle: () => void;
-}
+// Make sure you have react-icons installed: npm install react-icons
+import { 
+    FiMic, 
+    FiMicOff, 
+    FiCamera, 
+    FiCameraOff, 
+    FiTrash2, 
+    FiDownload 
+} from 'react-icons/fi';
 
-export default function ControlPanel({
-  micEnabled,
-  cameraEnabled,
-  brushStyle,
-  onToggleMic,
-  onToggleCamera,
-  onClearCanvas,
-  onSaveSnapshot,
-  onChangeBrushStyle,
-}: ControlPanelProps) {
-  const [brushDropdownOpen, setBrushDropdownOpen] = useState(false);
+// STEP 1: Define the props type
+type ControlPanelProps = {
+    micEnabled: boolean;
+    cameraEnabled: boolean;
+    brushStyle: 'string' | 'ink' | 'smoke';
+    onToggleMic: () => void;
+    onToggleCamera: () => void;
+    onClearCanvas: () => void;
+    onSaveSnapshot: () => void;
+    onChangeBrushStyle: () => void; // Changed to a simple toggle
+};
 
-  const brushNames = {
-    ink: 'Ink Ribbon',
-    smoke: 'Smoke Trail',
-    string: 'String',
-  };
+// STEP 2: Use the props in the component
+const ControlPanel: React.FC<ControlPanelProps> = ({
+    micEnabled,
+    cameraEnabled,
+    brushStyle,
+    onToggleMic,
+    onToggleCamera,
+    onClearCanvas,
+    onSaveSnapshot,
+    onChangeBrushStyle
+}) => {
+    return (
+        <footer className="absolute bottom-0 left-0 w-full z-10 pointer-events-none">
+            {/* Accent Line */}
+            <div className="h-0.5 w-full bg-vintage-accent opacity-50"></div>
+            
+            <div className="flex justify-between items-center w-full px-8 py-4 bg-vintage-bg pointer-events-auto">
+                
+                {/* Left Controls: Toggles */}
+                <div className="flex gap-4">
+                    <button
+                        onClick={onToggleMic}
+                        title={micEnabled ? 'Mute Microphone' : 'Unmute Microphone'}
+                        className={`flex flex-col items-center justify-center p-2 w-20 h-16 border-2 ${micEnabled ? 'border-vintage-accent' : 'border-gray-600'} bg-black bg-opacity-20 hover:border-vintage-accent`}
+                    >
+                        {micEnabled ? <FiMic size={20} /> : <FiMicOff size={20} />}
+                        <span className="font-body text-sm mt-1">{micEnabled ? 'VOICE ON' : 'VOICE'}</span>
+                    </button>
+                    
+                    <button
+                        onClick={onToggleCamera}
+                        title={cameraEnabled ? 'Turn Off Camera' : 'Turn On Camera'}
+                        className={`flex flex-col items-center justify-center p-2 w-20 h-16 border-2 ${cameraEnabled ? 'border-vintage-accent' : 'border-gray-600'} bg-black bg-opacity-20 hover:border-vintage-accent`}
+                    >
+                        {cameraEnabled ? <FiCamera size={20} /> : <FiCameraOff size={20} />}
+                        <span className="font-body text-sm mt-1">{cameraEnabled ? 'GESTURE ON' : 'GESTURE'}</span>
+                    </button>
+                </div>
 
-  const brushOptions: Array<'ink' | 'smoke' | 'string'> = ['ink', 'smoke', 'string'];
+                {/* Center Control: Brush */}
+                <div className="flex flex-col items-center">
+                    <button 
+                        onClick={onChangeBrushStyle}
+                        title="Change Brush Style"
+                        className="px-6 py-2 border-2 border-gray-600 bg-black bg-opacity-20 hover:border-vintage-accent"
+                    >
+                        <span className="font-body capitalize">{brushStyle}</span>
+                    </button>
+                    <span className="font-body text-sm mt-1 opacity-70">BRUSH</span>
+                </div>
 
-  const handleBrushSelect = (style: 'ink' | 'smoke' | 'string') => {
-    if (style !== brushStyle) {
-      onChangeBrushStyle();
-    }
-    setBrushDropdownOpen(false);
-  };
+                {/* Right Controls: Actions */}
+                <div className="flex gap-4">
+                    <button 
+                        onClick={onClearCanvas}
+                        title="Clear Canvas"
+                        className="flex items-center justify-center p-4 h-16 w-16 border-2 border-gray-600 bg-black bg-opacity-20 hover:border-vintage-accent"
+                    >
+                        <FiTrash2 size={20} />
+                    </button>
+                    <button 
+                        onClick={onSaveSnapshot}
+                        title="Save Snapshot"
+                        className="flex items-center justify-center p-4 h-16 w-16 border-2 border-gray-600 bg-black bg-opacity-20 hover:border-vintage-accent"
+                    >
+                        <FiDownload size={20} />
+                    </button>
+                </div>
+            </div>
+        </footer>
+    );
+};
 
-  return (
-    <div className="fixed bottom-0 left-0 right-0 bg-panel border-t-2 border-accent-mustard">
-      <div className="px-8 py-5 flex items-center justify-between">
-        <div className="flex items-center gap-6">
-          <div className="flex flex-col items-center gap-3">
-            <button
-              onClick={onToggleMic}
-              className={`toggle-switch ${micEnabled ? 'active' : ''}`}
-              aria-label="Toggle microphone"
-              title={micEnabled ? 'Voice enabled' : 'Voice disabled'}
-            >
-              <div className="toggle-indicator" />
-            </button>
-            <span className="control-label">Voice</span>
-          </div>
-
-          <div className="divider-line" />
-
-          <div className="flex flex-col items-center gap-3">
-            <button
-              onClick={onToggleCamera}
-              className={`toggle-switch ${cameraEnabled ? 'active' : ''}`}
-              aria-label="Toggle camera"
-              title={cameraEnabled ? 'Gesture enabled' : 'Gesture disabled'}
-            >
-              <div className="toggle-indicator" />
-            </button>
-            <span className="control-label">Gesture</span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-6">
-          <div className="divider-line" />
-
-          <div className="brush-dropdown">
-            <button
-              onClick={() => setBrushDropdownOpen(!brushDropdownOpen)}
-              className="analog-button flex items-center justify-between gap-3"
-              aria-label="Select brush style"
-              aria-haspopup="true"
-              aria-expanded={brushDropdownOpen}
-            >
-              <span className="font-body-bold">{brushNames[brushStyle]}</span>
-              <ChevronUp
-                size={16}
-                className={`transition-transform ${brushDropdownOpen ? 'rotate-180' : ''}`}
-              />
-            </button>
-
-            {brushDropdownOpen && (
-              <div className="brush-dropdown-menu">
-                {brushOptions.map(option => (
-                  <button
-                    key={option}
-                    onClick={() => handleBrushSelect(option)}
-                    className="brush-dropdown-item"
-                    data-selected={option === brushStyle}
-                  >
-                    {brushNames[option]}
-                    {option === brushStyle && ' ✓'}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="divider-line" />
-
-          <div className="flex flex-col items-center gap-3">
-            <button
-              onClick={onClearCanvas}
-              className="analog-button-icon"
-              aria-label="Clear canvas"
-              title="Clear all artwork"
-            >
-              <Trash2 size={20} strokeWidth={1.5} />
-            </button>
-            <span className="control-label">Clear</span>
-          </div>
-
-          <div className="flex flex-col items-center gap-3">
-            <button
-              onClick={onSaveSnapshot}
-              className="analog-button-icon"
-              aria-label="Save snapshot"
-              title="Save artwork as PNG"
-            >
-              <Camera size={20} strokeWidth={1.5} />
-            </button>
-            <span className="control-label">Save</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+export default ControlPanel;
