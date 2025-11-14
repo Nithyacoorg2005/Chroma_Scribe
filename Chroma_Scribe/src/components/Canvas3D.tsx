@@ -4,11 +4,11 @@ import { Sphere, Trail, Line } from '@react-three/drei';
 import * as THREE from 'three';
 
 // --- Type Definitions ---
-// (No changes to types)
 type Canvas3DProps = {
     handPosition: any;
     audioData: { volume: number; pitch: number };
     brushStyle: 'ink' | 'smoke' | 'string';
+    isDrawing: boolean;
     clearCanvas: boolean;
     onClearComplete: () => void;
     takeSnapshot: boolean;
@@ -19,14 +19,25 @@ type BrushProps = {
     handPosition: any;
     audioData: { volume: number; pitch: number };
     brushRef: React.RefObject<THREE.Mesh>;
+    saturation: number;
 };
 
-type ArtRendererProps = Canvas3DProps;
+// THIS IS THE CORRECTED TYPE FOR ARTTRAIL
+type ArtTrailProps = {
+    audioData: { volume: number; pitch: number };
+    brushRef: React.RefObject<THREE.Object3D>;
+    brushStyle: 'ink' | 'smoke' | 'string';
+    saturation: number;
+};
 
 // --- 1. The Brush Component (The moving dot) ---
-// (No changes to this component)
-function Brush({ handPosition, audioData, brushRef }: BrushProps) {
-    const brushColor = new THREE.Color().setHSL(audioData.volume / 100, 1.0, 0.5);
+function Brush({ handPosition, audioData, brushRef, saturation }: BrushProps) {
+    const brushColor = new THREE.Color().setHSL(
+        audioData.volume / 100, // Hue
+        saturation,              // Saturation
+        0.5                      // Lightness
+    );
+    
     const brushScale = 0.1 + (audioData.volume / 50);
 
     useFrame(() => {
@@ -54,13 +65,50 @@ function Brush({ handPosition, audioData, brushRef }: BrushProps) {
     );
 }
 
-// --- 2. The Main Scene Renderer (This is where all the logic moves) ---
-function SceneRenderer(props: ArtRendererProps) {
+// --- 2. The Art Trail Component ---
+// This now uses the correct ArtTrailProps type
+function ArtTrail({ audioData, brushRef, brushStyle, saturation }: ArtTrailProps) {
+    const brushColor = new THREE.Color().setHSL(
+        audioData.volume / 100, // Hue
+        saturation,              // Saturation
+        0.5                      // Lightness
+    );
+    
+    const baseScale = (0.1 + (audioData.volume / 50));
+
+    let trailConfig = { width: 1, length: 1, attenuation: (t: number) => 0 };
+
+    if (brushStyle === 'smoke') {
+        trailConfig = {
+            width: baseScale * 4.0,
+            length: 30,
+            attenuation: (t: number) => t
+        };
+    } else {
+      // 'string' or 'ink' are handled by SceneRenderer, but we must return a Trail for 'smoke'
+      return null;
+    }
+
+    // Only return the Trail for 'smoke' style
+    return (
+        <Trail
+            target={brushRef}
+            width={trailConfig.width}
+            length={trailConfig.length}
+            color={brushColor}
+            attenuation={trailConfig.attenuation}
+        />
+    );
+}
+
+// --- 3. The Main Scene Renderer ---
+function SceneRenderer(props: Canvas3DProps) {
     const { gl } = useThree();
     const { 
         handPosition, 
         audioData, 
         brushStyle, 
+        isDrawing,
         takeSnapshot, 
         onSnapshotComplete, 
         clearCanvas, 
@@ -68,44 +116,28 @@ function SceneRenderer(props: ArtRendererProps) {
     } = props;
     
     const brushRef = useRef<THREE.Mesh>(null!);
-    
-    // --- THIS IS THE NEW LOGIC ---
-    // We now store a list of permanent points for the line
     const [points, setPoints] = useState<THREE.Vector3[]>([]);
-    const [isDrawing, setIsDrawing] = useState(false);
-    
-    // This state controls resetting the components
     const [renderKey, setRenderKey] = useState(0);
+    const [saturation, setSaturation] = useState(1.0);
 
-    // Audio-driven values
-    const brushColor = new THREE.Color().setHSL(audioData.volume / 100, 1.0, 0.5);
-    const baseScale = (0.1 + (audioData.volume / 50));
-
-    // Update drawing state based on hand presence
     useFrame(() => {
-        if (handPosition && handPosition.length > 0 && handPosition[0][8]) {
-            if (!isDrawing) setIsDrawing(true); // Set drawing to true
+        if (brushRef.current) {
+            const z = brushRef.current.position.z;
+            const newSaturation = THREE.MathUtils.clamp(z + 0.5, 0.4, 1.0);
+            setSaturation(newSaturation);
 
-            // Add the brush's current position to the points list
-            // We only do this for line-based brushes
-            if (brushStyle === 'string' || brushStyle === 'ink') {
-                if (brushRef.current) {
-                    // Only add point if it's different from the last one
-                    const newPoint = brushRef.current.position.clone();
-                    setPoints(prevPoints => {
-                        if (prevPoints.length === 0 || !prevPoints[prevPoints.length - 1].equals(newPoint)) {
-                            return [...prevPoints, newPoint];
-                        }
-                        return prevPoints;
-                    });
-                }
+            if (isDrawing && (brushStyle === 'string' || brushStyle === 'ink')) {
+                const newPoint = brushRef.current.position.clone();
+                setPoints(prevPoints => {
+                    if (prevPoints.length === 0 || !prevPoints[prevPoints.length - 1].equals(newPoint)) {
+                        return [...prevPoints, newPoint];
+                    }
+                    return prevPoints;
+                });
             }
-        } else {
-            if (isDrawing) setIsDrawing(false); // Set drawing to false
         }
     });
 
-    // Handle 'takeSnapshot'
     useEffect(() => {
         if (takeSnapshot) {
             const dataUrl = gl.domElement.toDataURL('image/png');
@@ -113,65 +145,48 @@ function SceneRenderer(props: ArtRendererProps) {
         }
     }, [takeSnapshot, gl, onSnapshotComplete]);
 
-    // Handle 'clearCanvas'
     useEffect(() => {
         if (clearCanvas) {
-            setPoints([]); // Clear the permanent points
-            setRenderKey(prevKey => prevKey + 1); // Reset fading components
+            setPoints([]); 
+            setRenderKey(prevKey => prevKey + 1);
             onClearComplete();
         }
     }, [clearCanvas, onClearComplete]);
 
-    // --- Brush Style Config ---
-    let trailConfig = {
-        width: 1,
-        length: 1,
-        attenuation: (t: number) => 0
-    };
-    
-    let lineConfig = {
-        lineWidth: 1,
-    };
-
+    const baseScale = (0.1 + (audioData.volume / 50));
+    let lineConfig = { lineWidth: 1 };
     if (brushStyle === 'string') {
         lineConfig.lineWidth = baseScale * 10;
     } else if (brushStyle === 'ink') {
-        lineConfig.lineWidth = baseScale * 25; // Much thicker
-    } else if (brushStyle === 'smoke') {
-        trailConfig = {
-            width: baseScale * 4.0,
-            length: 30,
-            attenuation: (t: number) => t // Fades linearly
-        };
+        lineConfig.lineWidth = baseScale * 25;
     }
+    const brushColor = new THREE.Color().setHSL(audioData.volume / 100, saturation, 0.5);
 
     return (
         <>
-            {/* 1. The visible brush dot */}
             <Brush
                 brushRef={brushRef}
                 handPosition={handPosition}
                 audioData={audioData}
+                saturation={saturation}
             />
 
-            {/* 2. The Art Component (Conditional Rendering) */}
-            
-            {/* If 'smoke', use the fading Trail */}
+            {/* Fading trail for 'smoke' */}
             {brushStyle === 'smoke' && isDrawing && (
-                <Trail
-                    key={`trail-${renderKey}`} // Key to reset
-                    target={brushRef}
-                    width={trailConfig.width}
-                    length={trailConfig.length}
-                    color={brushColor}
-                    attenuation={trailConfig.attenuation}
+                <ArtTrail
+                    key={`trail-${renderKey}`}
+                    brushRef={brushRef}
+                    audioData={audioData}
+                    brushStyle={brushStyle}
+                    saturation={saturation}
+                    // {...props} has been removed
                 />
             )}
 
-            {/* If 'string' or 'ink', use a permanent Line */}
+            {/* Permanent line for 'string' or 'ink' */}
             {(brushStyle === 'string' || brushStyle === 'ink') && points.length > 1 && (
                 <Line
-                    key={`line-${renderKey}`} // Key to reset
+                    key={`line-${renderKey}`}
                     points={points}
                     color={brushColor}
                     lineWidth={lineConfig.lineWidth}
@@ -181,8 +196,7 @@ function SceneRenderer(props: ArtRendererProps) {
     );
 }
 
-// --- 3. The Main Canvas Component ---
-// (No changes)
+// --- 4. The Main Canvas Component ---
 const Canvas3D: React.FC<Canvas3DProps> = (props) => {
     return (
         <div className="absolute top-0 left-0 w-full h-full z-0">

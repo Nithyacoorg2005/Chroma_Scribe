@@ -4,19 +4,15 @@ import ControlPanel from './components/ControlPanel';
 import CameraPreview from './components/CameraPreview';
 import { useHandTracking } from './hooks/useHandTracking';
 import { useAudioAnalysis } from './hooks/useAudioAnalysis';
-import Replicate from 'replicate';
-import { FiLoader } from 'react-icons/fi'; // Make sure react-icons is installed
+import { FiLoader } from 'react-icons/fi';
+import WelcomeModal from './components/WelcomeModal';
 
-// --- Replicate AI Setup ---
-// This uses the key from your .env file
-const replicate = new Replicate({
-    apiKey: import.meta.env.VITE_REPLICATE_API_TOKEN,
-});
+// This lets TypeScript know that 'puter' exists on the window
+declare const puter: any;
 
 // --- Helper Components for AI ---
 
-// This component will show the final AI image
-const ImageDisplay = ({ src, onClear }) => (
+const ImageDisplay = ({ src, onClear }: { src: string, onClear: () => void }) => (
     <div className="absolute top-0 left-0 w-full h-full z-30 bg-black bg-opacity-70 flex items-center justify-center">
         <div className="relative">
             <img src={src} alt="Evolved AI Art" className="max-w-[80vw] max-h-[80vh]" />
@@ -30,7 +26,6 @@ const ImageDisplay = ({ src, onClear }) => (
     </div>
 );
 
-// This component shows the loading spinner
 const Loader = () => (
     <div className="absolute top-0 left-0 w-full h-full z-30 bg-black bg-opacity-50 flex flex-col items-center justify-center">
         <FiLoader className="animate-spin text-vintage-accent" size={64} />
@@ -51,20 +46,21 @@ function App() {
     const videoRef = useRef<HTMLVideoElement>(null);
 
     // --- New AI States ---
+    const [showModal, setShowModal] = useState(true);
     const [prompt, setPrompt] = useState("");
     const [isEvolving, setIsEvolving] = useState(false);
     const [finalImage, setFinalImage] = useState<string | null>(null);
-    const [snapshotCallback, setSnapshotCallback] = useState<Function | null>(null); // Use Function type
+    const [snapshotCallback, setSnapshotCallback] = useState<Function | null>(null);
 
     // --- Hooks ---
     const audioData = useAudioAnalysis(micEnabled);
-    const { landmarks: handPosition, isInitialized: isHandtrackingInitialized } = useHandTracking(
+    const { landmarks: handPosition, isInitialized: isHandtrackingInitialized, isDrawing } = useHandTracking(
         videoRef,
         cameraStream,
         cameraEnabled
     );
 
-    // --- Camera Logic ---
+    // --- Camera Logic (No change) ---
     useEffect(() => {
         const initCamera = async () => {
             if (cameraEnabled) {
@@ -96,7 +92,7 @@ function App() {
         };
     }, [cameraEnabled]);
 
-    // --- Handlers ---
+    // --- Handlers (No change) ---
     const handleToggleMic = () => setMicEnabled(prev => !prev);
     const handleToggleCamera = () => setCameraEnabled(prev => !prev);
     const handleClearCanvas = () => setClearCanvas(true);
@@ -110,58 +106,54 @@ function App() {
     };
     const handleClosePreview = () => setCameraEnabled(false);
 
-    // --- THIS IS THE MISSING FUNCTION ---
-   // --- THIS IS THE UPDATED FUNCTION ---
-const handleEvolve = () => {
-    if (!prompt) {
-        alert("Please enter a prompt to evolve your art.");
-        return;
-    }
-
-    // 1. Set the callback
-    setSnapshotCallback(() => async (snapshotDataUrl: string) => {
-        setIsEvolving(true);
-        try {
-            // 2. Call YOUR OWN backend server
-            const response = await fetch('http://localhost:3001/api/evolve', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    image: snapshotDataUrl,
-                    prompt: prompt,
-                }),
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to get response from server.');
-            }
-
-            // 3. Get the result from your server
-            const output = (await response.json()) as [string];
-
-            setFinalImage(output[0]);
-
-        } catch (error) {
-            console.error("Failed to evolve image:", error);
-            alert("Failed to evolve image. Check console (F12).");
+    // --- THIS IS THE FINAL AI FUNCTION ---
+    const handleEvolve = () => {
+        if (!prompt) {
+            alert("Please enter a prompt to evolve your art.");
+            return;
         }
-        setIsEvolving(false);
-        setSnapshotCallback(null);
-    });
-};
-    // --- END OF MISSING FUNCTION ---
+
+        setIsEvolving(true);
+
+        setSnapshotCallback(() => async (snapshotDataUrl: string) => {
+            try {
+                // The snapshot data looks like "data:image/png;base64,iVBORw0KGgo..."
+                // We need to split it into the mime type and the raw data
+                const parts = snapshotDataUrl.split(',');
+                const mimeType = parts[0].match(/:(.*?);/)?.[1] || 'image/png';
+                const base64Data = parts[1];
+
+                // Call Puter.js AI with the correct model and format
+                const imageElement = await puter.ai.txt2img(
+                    prompt, // The text prompt
+                    {
+                        model: 'gemini-2.5-flash-image-preview', // The correct serverless model
+                        input_image: base64Data,                // The raw base64 data
+                        input_image_mime_type: mimeType         // The mime type
+                    }
+                );
+                
+                setFinalImage(imageElement.src);
+
+            } catch (error) {
+                console.error("Failed to evolve image:", error);
+                alert("Failed to evolve image. Check console (F12).");
+            }
+            setIsEvolving(false);
+            setSnapshotCallback(null);
+        });
+    };
+    // --- END OF FUNCTION ---
 
     return (
         <div className="relative w-full h-screen overflow-hidden bg-canvas">
-            {/* These components show the AI state */}
+            <WelcomeModal show={showModal} onClose={() => setShowModal(false)} />
             {isEvolving && <Loader />}
             {finalImage && <ImageDisplay src={finalImage} onClear={() => setFinalImage(null)} />}
 
             <video ref={videoRef} className="hidden" playsInline muted />
 
-            {/* Header Title */}
+            {/* Header Title (No change) */}
             <div className="fixed top-10 left-10 z-10 pointer-events-none">
                 <div className="bg-panel px-8 py-6 border-l-4 border-t-4 border-accent-mustard shadow-lg" style={{boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)'}}>
                     <h1 className="font-heading text-5xl text-primary mb-2 leading-tight">
@@ -173,18 +165,19 @@ const handleEvolve = () => {
                 </div>
             </div>
 
+            {/* Canvas3D (No change) */}
             <Canvas3D
                 handPosition={handPosition}
                 audioData={audioData}
                 brushStyle={brushStyle}
+                isDrawing={isDrawing} 
                 clearCanvas={clearCanvas}
                 onClearComplete={() => setClearCanvas(false)}
-                takeSnapshot={takeSnapshot || !!snapshotCallback} // Trigger snapshot
-                onSnapshotComplete={(dataUrl) => { // This prop sends the image data back
+                takeSnapshot={takeSnapshot || !!snapshotCallback}
+                onSnapshotComplete={(dataUrl) => {
                     if (snapshotCallback) {
-                        snapshotCallback(dataUrl); // Run AI
+                        snapshotCallback(dataUrl);
                     } else {
-                        // Standard save logic
                         const link = document.createElement('a');
                         link.setAttribute('download', 'chroma-scribe.png');
                         link.setAttribute('href', dataUrl);
@@ -195,6 +188,7 @@ const handleEvolve = () => {
                 }}
             />
 
+            {/* CameraPreview (No change) */}
             <CameraPreview
                 stream={cameraStream}
                 onClose={handleClosePreview}
@@ -202,7 +196,7 @@ const handleEvolve = () => {
                 onToggleMinimize={() => setIsPreviewMinimized(prev => !prev)}
             />
 
-            <ControlPanel
+           <ControlPanel
                 micEnabled={micEnabled}
                 cameraEnabled={cameraEnabled}
                 brushStyle={brushStyle}
@@ -211,10 +205,10 @@ const handleEvolve = () => {
                 onClearCanvas={handleClearCanvas}
                 onSaveSnapshot={handleSaveSnapshot}
                 onChangeBrushStyle={handleChangeBrushStyle}
-                // Pass new AI props down
                 prompt={prompt}
                 onPromptChange={setPrompt}
-                onEvolve={handleEvolve} // This will now work
+                onEvolve={handleEvolve}
+                audioData={audioData} // <-- ADD THIS LINE
             />
         </div>
     );
